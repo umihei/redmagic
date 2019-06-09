@@ -5,7 +5,6 @@
 #include <string.h>
 
 
-
 // values represents type of tokens
 enum {
 	TK_NUM = 256,	// integer token
@@ -121,6 +120,15 @@ int consume(int ty) {
 Node *expr();
 Node *mul();
 Node *term();
+Node *unary();
+
+Node *unary() {
+	if (consume('+'))
+		return term();
+	if (consume('-'))
+		return new_node('-', new_node_num(0), term());
+	return term();
+}
 
 Node *term() {
 	// if next token is '(', must be "(" expr ")"
@@ -139,13 +147,13 @@ Node *term() {
 }
 
 Node *mul() {
-	Node *node = term();
+	Node *node = unary();
 
 	for (;;) {
 		if (consume('*'))
-			node = new_node('*', node, term());
+			node = new_node('*', node, unary());
 		else if (consume('/'))
-			node = new_node('/', node, term());
+			node = new_node('/', node, unary());
 		else
 			return node;
 	}
