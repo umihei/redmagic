@@ -4,6 +4,8 @@
 #include <stdarg.h>
 #include <string.h>
 
+
+
 // values represents type of tokens
 enum {
 	TK_NUM = 256,	// integer token
@@ -23,6 +25,9 @@ char *user_input;
 // store token list to this array
 // can not accept over 100 tokens
 Token tokens[100];
+
+// initialize position of token as zero
+int pos = 0;
 
 // report errors
 // same arguments as printf
@@ -56,7 +61,7 @@ void tokenize() {
 			continue;
 		}
 
-		if (*p == '+' || *p == '-') {
+		if (*p == '+' || *p == '-' || *p == '*') {
 			tokens[i].ty = *p;
 			tokens[i].input = p;
 			i++;
@@ -79,6 +84,117 @@ void tokenize() {
 	tokens[i].input = p;
 }
 
+enum {
+	ND_NUM = 256,
+};
+
+typedef struct Node {
+	int ty;
+	struct Node *lhs;
+	struct Node *rhs;
+	int val;
+} Node;
+
+Node *new_node(int ty, Node *lhs, Node *rhs) {
+	Node *node = malloc(sizeof(Node));
+	node->ty = ty;
+	node->lhs = lhs;
+	node->rhs = rhs;
+	return node;
+}
+
+Node *new_node_num(int val) {
+	Node *node = malloc(sizeof(Node));
+	node->ty = ND_NUM;
+	node->val = val;
+	return node;
+}
+
+int consume(int ty) {
+	if (tokens[pos].ty != ty)
+		return 0;
+	pos++;
+	return 1;
+}
+
+// declare expr(), mul() and term().
+Node *expr();
+Node *mul();
+Node *term();
+
+Node *term() {
+	// if next token is '(', must be "(" expr ")"
+	if (consume('(')) {
+		Node *node = expr();
+		if (!consume(')'))
+			error_at(tokens[pos].input, "no closing brace");
+		return node;
+	}
+
+	// otherwise must be numbers
+	if (tokens[pos].ty = TK_NUM)
+		return new_node_num(tokens[pos++].val);
+
+	error_at(tokens[pos].input, "unexpected token");
+}
+
+Node *mul() {
+	Node *node = term();
+
+	for (;;) {
+		if (consume('*'))
+			node = new_node('*', node, term());
+		else if (consume('/'))
+			node = new_node('/', node, term());
+		else
+			return node;
+	}
+}
+
+Node *expr() {
+	Node *node = mul();
+
+	for (;;) {
+		if (consume('+'))
+			node = new_node('+', node, mul());
+		else if (consume('-'))
+			node = new_node('-', node, mul());
+		else
+			return node;
+	}
+}
+
+void gen(Node *node) {
+	if (node->ty == ND_NUM) {
+		printf("  push %d\n", node->val);
+		return;
+	}
+
+	gen(node->lhs);
+	gen(node->rhs);
+
+	printf("  pop rdi\n");
+	printf("  pop rax\n");
+
+	switch (node->ty) {
+	case '+':
+		printf("  add rax, rdi\n");
+		break;
+	case '-':
+		printf("  sub rax, rdi\n");
+		break;
+	case '*':
+		printf("  imul rdi\n");
+		break;
+	case '/':
+		printf("  cqo\n");
+		printf("  idiv rdi\n");
+	}
+
+	printf("  push rax\n");
+}
+
+
 
 int main(int argc, char **argv) {
 	if (argc != 2){
@@ -86,41 +202,20 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	// tokenize
+	// tokenize and parse
 	user_input = argv[1];
 	tokenize();
+	Node *node = expr();
 
+	// put former half of asccenbly
 	printf(".intel_syntax noprefix\n");
 	printf(".global main\n");
 	printf("main:\n");
 
-	if (tokens[0].ty != TK_NUM)
-		error_at(tokens[0].input, "not a number");
-	printf("  mov rax, %d\n", tokens[0].val);
+	// from top to bottom abstract syntax tree
+	gen(node);
 
-	int i = 1;
-	while (tokens[i].ty != TK_EOF) {
-		if (tokens[i].ty == '+') {
-			i++;
-			if (tokens[i].ty != TK_NUM)
-				error_at(tokens[i].input, "not a number");
-			printf("  add rax, %d\n", tokens[i].val);
-			i++;
-			continue;
-		}
-
-		if (tokens[i].ty == '-') {
-			i++;
-			if (tokens[i].ty != TK_NUM)
-				error_at(tokens[i].input, "not a number");
-			printf("  sub rax, %d\n", tokens[i].val);
-			i++;
-			continue;
-		}
-
-		error_at(tokens[i].input, "Unexpected token");
-	}
-
+	printf("  pop rax\n");
 	printf("  ret\n");
 	return 0;
 }
